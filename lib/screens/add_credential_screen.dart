@@ -1,0 +1,312 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/credential.dart';
+import '../models/category.dart';
+import '../providers/credential_provider.dart';
+import '../providers/category_provider.dart';
+import '../utils/constant.dart';
+import '../utils/theme.dart';
+
+class AddCredentialScreen extends StatefulWidget {
+  const AddCredentialScreen({super.key});
+
+  @override
+  State<AddCredentialScreen> createState() => _AddCredentialScreenState();
+}
+
+class _AddCredentialScreenState extends State<AddCredentialScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _websiteController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  
+  String? _selectedCategoryId;
+  bool _isPasswordVisible = false;
+  bool _isFavorite = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final categories = Provider.of<CategoryProvider>(context, listen: false).categories;
+      if (categories.isNotEmpty) {
+        setState(() {
+          _selectedCategoryId = categories.first.id;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _websiteController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  String _generatePassword() {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#\$%^&*';
+    final random = DateTime.now().millisecondsSinceEpoch;
+    String password = '';
+    for (int i = 0; i < 12; i++) {
+      password += chars[(random + i) % chars.length];
+    }
+    return password;
+  }
+
+  Future<void> _saveCredential() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a category'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final credential = Credential(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        categoryId: _selectedCategoryId!,
+        website: _websiteController.text.trim(),
+        username: _usernameController.text.trim(),
+        password: _passwordController.text,
+        favorite: _isFavorite,
+        lastUsed: DateTime.now().millisecondsSinceEpoch,
+      );
+
+      await Provider.of<CredentialProvider>(context, listen: false)
+          .addCredential(credential);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(ApplicationConstants.successCredentialAdded),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(ApplicationConstants.errorSavingData),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add Credential'),
+        actions: [
+          TextButton(
+            onPressed: _isLoading ? null : _saveCredential,
+            child: _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Credential Details',
+                  style: Theme.of(context).textTheme.displayMedium,
+                ),
+                const SizedBox(height: 24),
+                
+                // Category Selection
+                Consumer<CategoryProvider>(
+                  builder: (context, categoryProvider, child) {
+                    return DropdownButtonFormField<String>(
+                      value: _selectedCategoryId,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.folder),
+                      ),
+                      items: categoryProvider.categories.map((Category category) {
+                        return DropdownMenuItem<String>(
+                          value: category.id,
+                          child: Text(category.name),
+                        );
+                      }).toList(),
+                      onChanged: (String? value) {
+                        setState(() {
+                          _selectedCategoryId = value;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return ApplicationConstants.requiredField;
+                        }
+                        return null;
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                
+                // Website/Service Name
+                TextFormField(
+                  controller: _websiteController,
+                  decoration: const InputDecoration(
+                    labelText: 'Website/Service',
+                    hintText: 'e.g., Google, Netflix, Bank',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.language),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return ApplicationConstants.requiredField;
+                    }
+                    return null;
+                  },
+                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: 16),
+                
+                // Username/Email
+                TextFormField(
+                  controller: _usernameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Username/Email',
+                    hintText: 'Enter username or email',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return ApplicationConstants.requiredField;
+                    }
+                    return null;
+                  },
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+                
+                // Password
+                TextFormField(
+                  controller: _passwordController,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    hintText: 'Enter password',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: () {
+                            setState(() {
+                              _passwordController.text = _generatePassword();
+                            });
+                          },
+                          tooltip: 'Generate Password',
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isPasswordVisible = !_isPasswordVisible;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  obscureText: !_isPasswordVisible,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return ApplicationConstants.requiredField;
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                
+                // Favorite Toggle
+                SwitchListTile(
+                  title: const Text('Add to Favorites'),
+                  subtitle: const Text('Mark this credential as favorite for quick access'),
+                  value: _isFavorite,
+                  onChanged: (bool value) {
+                    setState(() {
+                      _isFavorite = value;
+                    });
+                  },
+                  activeColor: AppTheme.primaryColor,
+                ),
+                const SizedBox(height: 24),
+                
+                // Info Box
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.security, color: Colors.green[600]),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Your passwords are stored securely and encrypted on your device.',
+                          style: TextStyle(
+                            color: Colors.green[700],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
